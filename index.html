@@ -29,7 +29,8 @@
         const auth = getAuth(app);
         const codesRef = ref(db, 'approvedStudents');
         
-        let codesAddedBySara = {};
+        // 🚨🚨 المخزون الشامل لكل الأكواد (للتأكد من التفرد عند التوليد)
+        let allApprovedCodes = {}; 
         let currentUserUid = null;
         
         // 🚨🚨 مكان وضع الـ UID اليدوي
@@ -50,21 +51,12 @@
             }, 5000);
         };
         
-        // 💡 Logic 1: التحقق من UID الأدمن الحالي وصلاحياته
+        // 💡 Logic 1: التحقق من UID الأدمن الحالي (مُعدَّل ليطابق UID ثابت)
         async function checkAdminStatus(uid) {
-            try {
-                const adminRef = ref(db, `allowed_admins/${uid}`);
-                const snapshot = await get(adminRef);
-                
-                if (snapshot.exists() && snapshot.val().role === CURRENT_ADMIN_ROLE) {
-                    return true;
-                } else {
-                    window.showToast("❌ صلاحياتك كـ " + CURRENT_ADMIN_ROLE + " غير موثقة. برجاء مراجعة المالك.", "error");
-                    return false;
-                }
-            } catch (error) {
-                console.error("Firebase Auth Check Error:", error);
-                window.showToast("❌ خطأ في التحقق من الصلاحيات. برجاء مراجعة اتصالك.", "error");
+            if (uid === SARA_FIXED_UID) {
+                return true;
+            } else {
+                window.showToast("❌ هذا الحساب غير مصرح له بالدخول للوحة تحكم Sara.", "error");
                 return false;
             }
         }
@@ -100,12 +92,13 @@
             window.showToast("👋 تم تسجيل الخروج بنجاح.", "warn");
         };
 
-        // 💡 Logic 5: توليد كود عشوائي فريد
+        // 💡 Logic 5: توليد كود عشوائي فريد (بيتحقق من المخزون الشامل)
         function generateUniqueCode() {
             let code;
             do {
+                // توليد كود مكون من 6 أرقام عشوائية
                 code = String(Math.floor(100000 + Math.random() * 900000));
-            } while (codesAddedBySara[code]);
+            } while (allApprovedCodes[code]); // 🚨🚨 التحقق من كل الأكواد الموجودة
             return code;
         }
         
@@ -175,25 +168,30 @@
             });
         }, e);
         
-        // 💡 Logic 10: تحميل الأكواد (فقط أكواد Sara)
+        // 💡 Logic 10: تحميل الأكواد (مُعدَّل لتكوين مخزون شامل والفلترة)
         function loadSaraCodes() {
             onValue(codesRef, (snapshot) => {
-                codesAddedBySara = {};
+                allApprovedCodes = {}; // 1. مسح المخزون الشامل (مهم للتحقق من التفرد)
                 let totalCodes = 0;
                 let totalAmount = 0;
+                let saraCodesForDisplay = []; // 2. قائمة لعرض أكواد سارة فقط
                 
                 snapshot.forEach((childSnapshot) => {
                     const data = childSnapshot.val();
-                    // 🚨 فلترة الأكواد الخاصة بـ Sara فقط
+                    data.uid = childSnapshot.key;
+                    
+                    // 🚨🚨 تخزين كل الأكواد (الـ Inventory الشامل)
+                    allApprovedCodes[childSnapshot.key] = data;
+                    
+                    // 🚨 فلترة الأكواد الخاصة بـ Sara فقط للعرض والإحصائيات
                     if ((data.addedByAdmin || '').toLowerCase() === CURRENT_ADMIN_ROLE) { 
-                        data.uid = childSnapshot.key;
-                        codesAddedBySara[childSnapshot.key] = data;
+                        saraCodesForDisplay.push(data);
                         totalCodes++;
                         totalAmount += (data.pricePaid || 0);
                     }
                 });
                 
-                renderCodesTable(Object.values(codesAddedBySara));
+                renderCodesTable(saraCodesForDisplay); // عرض أكواد سارة فقط
                 renderStats(totalCodes, totalAmount);
                 window.showToast("✅ تم تحديث بيانات لوحتك يا سارة.", "success");
             }, (error) => {
@@ -212,6 +210,7 @@
             if (user) {
                 currentUserUid = user.uid;
                 
+                // هنا بيتم استخدام الدالة الجديدة اللي بتطابق الـ UID
                 checkAdminStatus(user.uid).then(isVerified => {
                     if (isVerified) {
                         loginContainer.style.display = 'none';
