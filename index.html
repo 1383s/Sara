@@ -8,7 +8,8 @@
     <script type="module">
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.1.0/firebase-app.js';
         import { getDatabase, ref, onValue, update, remove, set, get } from 'https://www.gstatic.com/firebasejs/10.1.0/firebase-database.js';
-        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.1.0/firebase-auth.js'; 
+        // 🚨 التعديل الأول: إضافة setPersistence و inMemoryPersistence لضمان عدم حفظ الجلسة
+        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, setPersistence, inMemoryPersistence } from 'https://www.gstatic.com/firebasejs/10.1.0/firebase-auth.js'; 
 
         const firebaseConfig = {
             apiKey: "AIzaSyBK6FZF3LW83qaUHBKYTfiVd2Ozrd1Rf2g",
@@ -87,17 +88,29 @@
             const password = document.getElementById('loginPassword').value;
             
             try {
+                // 🚨 Fix 1: نضبط الـ Persistence لـ inMemoryPersistence 
+                // ده بيضمن إن الجلسة ما تتسجلش على الجهاز (Local/Session Storage)
+                await setPersistence(auth, inMemoryPersistence);
+
                 const userCredential = await signInWithEmailAndPassword(auth, email, password);
-                window.showToast("✅ تم تسجيل الدخول بنجاح. جاري التحقق من الصلاحيات...", "success");
+
+                // 1. حفظ الإيميل في Local Storage باسم 'sarausern' (لـ Pre-fill)
+                localStorage.setItem('sarausern', email);
+                
+                window.showToast("✅ تم التحقق من البيانات بنجاح. جاري الدخول للوحة التحكم...", "success");
+                // الـ onAuthStateChanged دلوقتي هيكمل شغله وهيفتح اللوحة
             } catch (error) {
                 window.showToast(`❌ فشل تسجيل الدخول: ${error.message}`, "error");
             }
         };
 
-        // 💡 Logic 4: تسجيل الخروج
+        // 💡 Logic 4: تسجيل الخروج (وحذف الإيميل المحفوظ)
         window.logout = async () => {
+             // مسح الإيميل من Local Storage (لتنفيذ طلبك لزرار الحذف في الصفحة الداخلية)
+            localStorage.removeItem('sarausern');
             await signOut(auth);
-            window.showToast("👋 تم تسجيل الخروج بنجاح.", "warn");
+            window.showToast("👋 تم تسجيل الخروج بنجاح. البيانات المحفوظة حُذفت.", "warn");
+            window.location.reload(); 
         };
 
         // 💡 Logic 5: توليد كود عشوائي فريد
@@ -234,6 +247,17 @@
                 document.getElementById('codesTableBody').innerHTML = '<tr><td colspan="7">برجاء تسجيل الدخول...</td></tr>';
             }
         });
+
+        // 💡 قراءة الإيميل من Local Storage عند تحميل الصفحة (لـ Pre-fill)
+        document.addEventListener('DOMContentLoaded', () => {
+            const savedEmail = localStorage.getItem('sarausern');
+            const emailInput = document.getElementById('loginEmail');
+            if (savedEmail && emailInput) {
+                emailInput.value = savedEmail;
+                document.getElementById('loginPassword').focus(); 
+            }
+        });
+
 
         // 💡 الدوال المساعدة للعرض
         
@@ -420,6 +444,7 @@
             <input type="email" id="loginEmail" placeholder="البريد الإلكتروني" required>
             <input type="password" id="loginPassword" placeholder="كلمة المرور" required>
             <button type="submit">دخول 🛡️</button>
+            <button type="button" onclick="clearLocalSessionData()" style="background: #555; margin-top: 10px;">مسح الإيميل المحفوظ</button>
         </form>
     </div>
 
@@ -485,5 +510,13 @@
 </div>
 
 <div id="toast-container"></div>
+<script>
+// 🚨 الدالة الخاصة بمسح بيانات Local Storage (للتنفيذ اليدوي)
+window.clearLocalSessionData = () => {
+    localStorage.removeItem('sarausern');
+    document.getElementById('loginEmail').value = ''; 
+    window.showToast("✅ تم مسح الإيميل المحفوظ من المتصفح.", "success");
+};
+</script>
 </body>
 </html>
