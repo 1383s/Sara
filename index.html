@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SARA - لوحة تحكم المشرف | Full Mark</title>
+    <title>SARA - لوحة تحكم التقارير الديناميكية | Full Mark</title>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap" rel="stylesheet">
     <script type="module">
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.1.0/firebase-app.js';
@@ -21,23 +21,24 @@
             measurementId: "G-J5R2EFM2D0"
         };
         
-        // 🔑 تحديد دور اللوحة دي
-        const CURRENT_ADMIN_ROLE = 'sara'; // 🚨 التحديد هنا مهم
+        const CURRENT_ADMIN_ROLE = 'sara'; 
         
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
         const auth = getAuth(app);
         const codesRef = ref(db, 'approvedStudents');
         
-        // 🚨🚨 المخزون الشامل لكل الأكواد (للتأكد من التفرد عند التوليد)
         let allApprovedCodes = {}; 
         let currentUserUid = null;
         
-        // 🚨🚨 مكان وضع الـ UID اليدوي
+        // 🚨 UID سارة الثابت للتحقق من الصلاحية
         const SARA_FIXED_UID = "teTUzjeVAMVt9tdxK823VlWumRi2"; 
+        
+        // 💡 متغيرات جديدة لحفظ الأكواد وعرض التقرير الحالي
+        let allSaraCodes = []; 
+        let currentReportCodes = [];
 
-
-        window.showToast = (message, type = "success") => { /* ... (نفس دالة GIZA) ... */ 
+        window.showToast = (message, type = "success") => { 
             const container = document.getElementById('toast-container');
             const toast = document.createElement('div');
             toast.className = `toast toast-${type}`;
@@ -51,9 +52,9 @@
             }, 5000);
         };
         
-        // 💡 Logic 1: التحقق من UID الأدمن الحالي (مُعدَّل ليطابق UID ثابت)
+        // 💡 Logic 1: التحقق من UID الأدمن الحالي (المُصلَّح)
         async function checkAdminStatus(uid) {
-            if (uid === SARA_FIXED_UID) {
+            if (uid === SARA_FIXED_UID) { 
                 return true;
             } else {
                 window.showToast("❌ هذا الحساب غير مصرح له بالدخول للوحة تحكم Sara.", "error");
@@ -90,15 +91,15 @@
         window.logout = async () => {
             await signOut(auth);
             window.showToast("👋 تم تسجيل الخروج بنجاح.", "warn");
+            window.location.reload(); 
         };
 
-        // 💡 Logic 5: توليد كود عشوائي فريد (بيتحقق من المخزون الشامل)
+        // 💡 Logic 5: توليد كود عشوائي فريد
         function generateUniqueCode() {
             let code;
             do {
-                // توليد كود مكون من 6 أرقام عشوائية
                 code = String(Math.floor(100000 + Math.random() * 900000));
-            } while (allApprovedCodes[code]); // 🚨🚨 التحقق من كل الأكواد الموجودة
+            } while (allApprovedCodes[code]); 
             return code;
         }
         
@@ -168,55 +169,153 @@
             });
         }, e);
         
-        // 💡 Logic 10: تحميل الأكواد (مُعدَّل لتكوين مخزون شامل والفلترة)
+        // 💡 Logic 10: تحميل الأكواد وتصنيفها
         function loadSaraCodes() {
             onValue(codesRef, (snapshot) => {
-                allApprovedCodes = {}; // 1. مسح المخزون الشامل (مهم للتحقق من التفرد)
-                let totalCodes = 0;
+                allApprovedCodes = {}; 
+                let activeCount = 0;
+                let blockedCount = 0;
+                let expiredCount = 0;
                 let totalAmount = 0;
-                let saraCodesForDisplay = []; // 2. قائمة لعرض أكواد سارة فقط
+                allSaraCodes = []; 
+                
+                const now = Date.now();
                 
                 snapshot.forEach((childSnapshot) => {
                     const data = childSnapshot.val();
                     data.uid = childSnapshot.key;
                     
-                    // 🚨🚨 تخزين كل الأكواد (الـ Inventory الشامل)
                     allApprovedCodes[childSnapshot.key] = data;
                     
-                    // 🚨 فلترة الأكواد الخاصة بـ Sara فقط للعرض والإحصائيات
                     if ((data.addedByAdmin || '').toLowerCase() === CURRENT_ADMIN_ROLE) { 
-                        saraCodesForDisplay.push(data);
-                        totalCodes++;
+                        allSaraCodes.push(data);
                         totalAmount += (data.pricePaid || 0);
+
+                        const isBlocked = data.isBlocked === true;
+                        const isExpired = data.expiry < now;
+
+                        if (isExpired) {
+                            expiredCount++;
+                        } else if (isBlocked) {
+                            blockedCount++;
+                        } else {
+                            activeCount++;
+                        }
                     }
                 });
                 
-                renderCodesTable(saraCodesForDisplay); // عرض أكواد سارة فقط
-                renderStats(totalCodes, totalAmount);
+                // تحديث أرقام البطاقات الإحصائية
+                document.getElementById('statActiveCount').textContent = activeCount;
+                document.getElementById('statBlockedCount').textContent = blockedCount;
+                document.getElementById('statExpiredCount').textContent = expiredCount;
+                
+                // عرض الإحصائيات الأخرى (الإجمالية)
+                renderStats(activeCount + blockedCount + expiredCount, totalAmount);
                 window.showToast("✅ تم تحديث بيانات لوحتك يا سارة.", "success");
+                
+                // لو كان فيه تقرير مفتوح، نحدثه عشان الداتا تكون صح
+                const activeReport = document.getElementById('reportDisplayArea').getAttribute('data-active-report');
+                if (activeReport) {
+                    // تحديث التقرير الحالي
+                    toggleReportDisplay(activeReport, true); 
+                } else {
+                    // عشان لو عامل reload واللوحة مفتوحة، يحمل بيانات الجدول فارغة
+                    document.getElementById('codesTableBody').innerHTML = '<tr><td colspan="7">اختر بطاقة لعرض التفاصيل...</td></tr>';
+                }
+                
             }, (error) => {
                 window.showToast("❌ فشل الاتصال بقاعدة البيانات: " + error.message, "error");
             });
         }
         
+        // 💡 Logic 11: التبديل بين محتوى البطاقات (العرض والإخفاء)
+        window.toggleReportDisplay = (reportType, forceUpdate = false) => {
+            const displayArea = document.getElementById('reportDisplayArea');
+            const currentActive = displayArea.getAttribute('data-active-report');
+            const now = Date.now();
+            const searchInput = document.getElementById('searchInput');
+
+            // 1. تعريف الفلتر
+            let filteredCodes = [];
+            let title = "";
+            
+            if (reportType === 'active') {
+                title = "الأكواد المفعّلة (نشطة وغير منتهية)";
+                filteredCodes = allSaraCodes.filter(c => c.isBlocked !== true && c.expiry >= now);
+            } else if (reportType === 'blocked') {
+                title = "الأكواد المعطّلة يدويًا";
+                filteredCodes = allSaraCodes.filter(c => c.isBlocked === true);
+            } else if (reportType === 'expired') {
+                title = "الأكواد منتهية الصلاحية";
+                filteredCodes = allSaraCodes.filter(c => c.expiry < now);
+            }
+            
+            currentReportCodes = filteredCodes;
+
+            // 2. تطبيق خاصية التبديل (Toggling)
+            if (currentActive === reportType && !forceUpdate) {
+                // لو ضغط مرة ثانية على نفس البطاقة، نقفل التقرير ونرجع للوضع الأصلي
+                displayArea.style.display = 'none';
+                displayArea.removeAttribute('data-active-report');
+                document.getElementById('codesTableBody').innerHTML = '<tr><td colspan="7">اختر بطاقة لعرض التفاصيل...</td></tr>';
+                document.getElementById('reportTitle').textContent = '';
+                searchInput.value = ''; // مسح خانة البحث
+                
+            } else {
+                // لو بيفتح تقرير جديد أو بيعمل تحديث إجباري
+                displayArea.style.display = 'block';
+                displayArea.setAttribute('data-active-report', reportType);
+                document.getElementById('reportTitle').textContent = title;
+                searchInput.value = ''; // مسح خانة البحث قبل العرض الجديد
+                
+                // عرض البيانات
+                renderCodesTable(filteredCodes);
+            }
+        };
+        
+        // 💡 Logic 12: إغلاق منطقة التقرير بالزر
+        window.clearSearchAndTable = () => {
+            const activeReport = document.getElementById('reportDisplayArea').getAttribute('data-active-report');
+            if (activeReport) {
+                toggleReportDisplay(activeReport);
+            }
+        }
+        
+        // 💡 Logic 13: البحث بالكود أو الاسم في الفئة الحالية
+        window.filterTable = () => {
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            
+            if (searchTerm.length === 0) {
+                // لو البحث فضي، نعرض كل البيانات اللي في الفئة الحالية
+                renderCodesTable(currentReportCodes);
+                return;
+            }
+
+            // فلترة الأكواد اللي تم عرضها بالفعل في التقرير الحالي
+            const results = currentReportCodes.filter(data => 
+                (data.uid && data.uid.toLowerCase().includes(searchTerm)) || // بحث بالكود
+                (data.name && data.name.toLowerCase().includes(searchTerm))   // بحث بالاسم
+            );
+            
+            renderCodesTable(results);
+        };
+
+
         // 💡 Main Auth State Observer
         onAuthStateChanged(auth, (user) => {
             const loginContainer = document.getElementById('loginContainer');
             const mainContent = document.getElementById('mainContent');
             const logoutBtn = document.getElementById('logoutBtn');
             const addCodeBtn = document.getElementById('addCodeButton');
-            const statsBtn = document.getElementById('statsButton');
             
             if (user) {
                 currentUserUid = user.uid;
                 
-                // هنا بيتم استخدام الدالة الجديدة اللي بتطابق الـ UID
                 checkAdminStatus(user.uid).then(isVerified => {
                     if (isVerified) {
                         loginContainer.style.display = 'none';
                         mainContent.style.display = 'block';
                         addCodeBtn.style.display = 'block';
-                        statsBtn.style.display = 'block';
                         logoutBtn.style.display = 'block';
                         loadSaraCodes(); 
                     } else {
@@ -228,9 +327,8 @@
                 loginContainer.style.display = 'block';
                 mainContent.style.display = 'none';
                 addCodeBtn.style.display = 'none';
-                statsBtn.style.display = 'none';
                 logoutBtn.style.display = 'none';
-                document.getElementById('codesTableBody').innerHTML = '<tr><td colspan="7">برجاء تسجيل الدخول...</td></tr>';
+                // مش محتاجين نغير الـ codesTableBody هنا، هنسيبها زي ما هي "اختر بطاقة..."
             }
         });
 
@@ -248,16 +346,37 @@
         function renderCodesTable(codes) {
             const tbody = document.getElementById('codesTableBody');
             tbody.innerHTML = '';
+            
+            // 🚨 عشان نضمن إن الرسالة دي متظهرش غير لما الفلتر يرجع نتائج صفرية 
             if (codes.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="7">لا توجد أكواد مضافة بواسطة Sara حاليًا.</td></tr>';
+                 const title = document.getElementById('reportDisplayArea').getAttribute('data-active-report');
+                 const message = (title) ? 'لا توجد أكواد في هذه الفئة حاليًا.' : 'اختر بطاقة لعرض التفاصيل...';
+                 tbody.innerHTML = `<tr><td colspan="7">${message}</td></tr>`;
                 return;
             }
 
             codes.forEach(data => {
+                const isExpired = data.expiry < Date.now();
                 const isBlocked = data.isBlocked === true;
-                const statusText = isBlocked ? 'مُعطّل' : 'نشط';
-                const statusClass = isBlocked ? 'status-blocked' : 'status-active';
+                
+                let statusText;
+                let statusClass;
+
+                if (isExpired) {
+                    statusText = 'منتهي الصلاحية';
+                    statusClass = 'status-expired';
+                } else if (isBlocked) {
+                    statusText = 'مُعطّل يدويًا';
+                    statusClass = 'status-blocked';
+                } else {
+                    statusText = 'نشط';
+                    statusClass = 'status-active';
+                }
+                
                 const blockBtnText = isBlocked ? 'تفعيل' : 'تعطيل';
+                const ejectDisabled = isExpired || isBlocked ? 'disabled' : '';
+                const ejectTitle = isExpired || isBlocked ? 'لا يمكن إخراج الجهاز لكود غير نشط' : '';
+
                 
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
@@ -268,7 +387,7 @@
                     <td class="${statusClass}">${statusText}</td>
                     <td class="device-id">${data.deviceId || 'غير مُفعل'}</td>
                     <td class="actions">
-                        <button onclick="ejectDevice('${data.uid}', '${data.name}')" class="eject-btn">إخراج الجهاز</button>
+                        <button onclick="ejectDevice('${data.uid}', '${data.name}')" class="eject-btn" ${ejectDisabled} title="${ejectTitle}">إخراج الجهاز</button>
                         <button onclick="toggleBlock('${data.uid}', '${data.name}', ${isBlocked})" class="${isBlocked ? 'unblock-btn' : 'block-btn'}">${blockBtnText}</button>
                         <button onclick="deleteCode('${data.uid}', '${data.name}')" class="delete-btn">حذف</button>
                     </td>
@@ -330,6 +449,7 @@
             --warn: #FFA500;
             --bg-mid: #222;
             --hover-dark: #333;
+            --expired-color: #f7a048; /* لون برتقالي لانتهاء الصلاحية */
         }
         * { box-sizing: border-box; font-family: 'Cairo', sans-serif; }
         body { background: var(--bg-dark); color: var(--text-light); margin: 0; padding: 0; }
@@ -371,7 +491,68 @@
         .stat-item { text-align: center; color: var(--text-light); }
         .stat-item p { margin: 5px 0; font-size: 14px; color: var(--secondary); }
         .stat-item strong { display: block; font-size: 32px; color: var(--primary); }
+        
+        /* 🚨 Report Cards Container (جديد) */
+        .report-cards-container {
+            display: flex;
+            justify-content: space-between;
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+        .report-card {
+            flex: 1;
+            background: #1a1a1a;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            border-top: 5px solid transparent;
+        }
+        .report-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.4);
+        }
+        .report-card p {
+            margin: 5px 0;
+            font-size: 14px;
+            color: var(--text-light);
+        }
+        .report-card strong {
+            display: block;
+            font-size: 30px;
+            font-weight: 700;
+        }
+        #cardActive { border-top-color: var(--primary); }
+        #cardBlocked { border-top-color: var(--warn); }
+        #cardExpired { border-top-color: var(--error); }
+        #cardActive strong { color: var(--primary); }
+        #cardBlocked strong { color: var(--warn); }
+        #cardExpired strong { color: var(--error); }
 
+        /* Search Container (جديد) */
+        .search-container {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        #searchInput {
+            flex-grow: 1;
+            padding: 10px;
+            border: 1px solid #444;
+            border-radius: 5px;
+            background: #333;
+            color: var(--text-light);
+        }
+        .search-container button {
+            background: #444;
+            color: var(--text-light);
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        
         /* Table Style */
         .table-responsive { overflow-x: auto; }
         table { width: 100%; border-collapse: collapse; margin-top: 15px; }
@@ -383,8 +564,13 @@
         /* Actions */
         .status-active { color: var(--primary); font-weight: 700; }
         .status-blocked { color: var(--warn); font-weight: 700; }
+        .status-expired { color: var(--error); font-weight: 700; } /* جديد */
         .actions button {
             padding: 5px 10px; border: none; border-radius: 5px; cursor: pointer; margin: 2px; font-weight: 700; transition: 0.2s;
+        }
+        .actions button[disabled] {
+            opacity: 0.5;
+            cursor: not-allowed;
         }
         .eject-btn { background: #0099cc; color: var(--text-light); }
         .block-btn { background: var(--warn); color: var(--bg-dark); }
@@ -402,11 +588,13 @@
             margin-bottom: 10px;
         }
 
-        /* Toast (نفس ستايل GIZA) */
+        /* Toast */
         #toast-container { position: fixed; bottom: 20px; left: 20px; z-index: 10000; }
         .toast { padding: 12px 20px; border-radius: 10px; margin-top: 10px; font-weight: 700; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5); opacity: 0; animation: toastIn 0.5s forwards; transition: opacity 0.5s, transform 0.5s; min-width: 200px; text-align: right; }
         .toast-success { background: var(--primary); color: var(--bg-dark); }
         .toast-error { background: var(--error); color: var(--text-light); }
+        .toast-warn { background: var(--warn); color: var(--bg-dark); }
+
     </style>
 </head>
 <body>
@@ -430,11 +618,25 @@
         
         <div class="controls-row">
             <button id="addCodeButton" onclick="toggleAddCodeForm(true)">+ إضافة كود جديد</button>
-            <button id="statsButton" onclick="toggleStats(true)">عرض الإحصائيات 📈</button>
+            <button id="statsButton" onclick="toggleStats(true)">عرض الإجمالي 📈</button>
         </div>
         
-        <div id="statsContainer">
+        <div id="statsContainer"></div>
+        
+        <div id="reportCardsContainer" class="report-cards-container">
+            <div class="report-card" id="cardActive" onclick="toggleReportDisplay('active')">
+                <p>الأكواد المفعّلة</p>
+                <strong id="statActiveCount">0</strong>
             </div>
+            <div class="report-card" id="cardBlocked" onclick="toggleReportDisplay('blocked')">
+                <p>المعطّلة يدويًا</p>
+                <strong id="statBlockedCount">0</strong>
+            </div>
+            <div class="report-card" id="cardExpired" onclick="toggleReportDisplay('expired')">
+                <p>منتهية الصلاحية</p>
+                <strong id="statExpiredCount">0</strong>
+            </div>
+        </div>
         
         <div id="addCodeFormContainer">
             <h3>إضافة كود جديد بواسطة Sara</h3>
@@ -460,24 +662,32 @@
             </form>
         </div>
         
-        <h2>أكواد التفعيل المضافة بواسطتك</h2>
-        <div class="table-responsive">
-            <table>
-                <thead>
-                    <tr>
-                        <th>الكود (UID)</th>
-                        <th>اسم الطالب</th>
-                        <th>المبلغ</th>
-                        <th>الوقت المتبقي</th>
-                        <th>حالة الكود</th>
-                        <th>جهاز التفعيل</th>
-                        <th>الإجراءات</th>
-                    </tr>
-                </thead>
-                <tbody id="codesTableBody">
-                    <tr><td colspan="7">جاري تحميل الأكواد...</td></tr> 
-                </tbody>
-            </table>
+        <div id="reportDisplayArea" style="display:none; margin-top: 20px;">
+            <h2 id="reportTitle"></h2>
+            
+            <div class="search-container">
+                <input type="text" id="searchInput" onkeyup="filterTable()" placeholder="ابحث بالكود أو الاسم..." />
+                <button onclick="clearSearchAndTable()">إغلاق التقرير ❌</button>
+            </div>
+
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>الكود (UID)</th>
+                            <th>اسم الطالب</th>
+                            <th>المبلغ</th>
+                            <th>الوقت المتبقي</th>
+                            <th>حالة الكود</th>
+                            <th>جهاز التفعيل</th>
+                            <th>الإجراءات</th>
+                        </tr>
+                    </thead>
+                    <tbody id="codesTableBody">
+                        <tr><td colspan="7">اختر بطاقة لعرض التفاصيل...</td></tr> 
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 
