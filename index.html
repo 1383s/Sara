@@ -53,7 +53,7 @@
         // 💡 Logic 1: التحقق من UID الأدمن الحالي وصلاحياته
         async function checkAdminStatus(uid) {
             try {
-                const adminRef = ref(db, `adminUids/${uid}`); 
+                const adminRef = ref(db, `allowed_admins/${uid}`);
                 const snapshot = await get(adminRef);
                 
                 if (snapshot.exists() && snapshot.val().role === CURRENT_ADMIN_ROLE) {
