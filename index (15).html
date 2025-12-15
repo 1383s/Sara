@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SARA - لوحة تحكم المشرف | Full Mark</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap" rel="stylesheet">
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.1.0/firebase-app.js';
+        import { getDatabase, ref, onValue, update, remove, set, get } from 'https://www.gstatic.com/firebasejs/10.1.0/firebase-database.js';
+        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.1.0/firebase-auth.js'; 
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyBK6FZF3LW83qaUHBKYTfiVd2Ozrd1Rf2g",
+            authDomain: "thanawy-1383.firebaseapp.com",
+            databaseURL: "https://thanawy-1383-default-rtdb.firebaseio.com",
+            projectId: "thanawy-1383",
+            storageBucket: "thanawy-1383.firebasestorage.app",
+            messagingSenderId: "1026664406457",
+            appId: "1:1026664406457:web:87d71f7e41bef36ba0aa68",
+            measurementId: "G-J5R2EFM2D0"
+        };
+        
+        // 🔑 تحديد دور اللوحة دي
+        const CURRENT_ADMIN_ROLE = 'sara'; // 🚨 التحديد هنا مهم
+        
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+        const auth = getAuth(app);
+        const codesRef = ref(db, 'approvedStudents');
+        
+        let codesAddedBySara = {};
+        let currentUserUid = null;
+        
+        // 🚨🚨 مكان وضع الـ UID اليدوي
+        const SARA_FIXED_UID = "TZtZBAR7uCYWO1ebnKmpRAteQ4T2"; 
+
+
+        window.showToast = (message, type = "success") => { /* ... (نفس دالة GIZA) ... */ 
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+            toast.textContent = message;
+            container.appendChild(toast);
+            setTimeout(() => { toast.style.opacity = '1'; toast.style.transform = 'translateY(0)'; }, 10);
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateY(-20px)';
+                toast.addEventListener('transitionend', () => toast.remove());
+            }, 5000);
+        };
+        
+        // 💡 Logic 1: التحقق من UID الأدمن الحالي وصلاحياته
+        async function checkAdminStatus(uid) {
+            try {
+                const adminRef = ref(db, `allowed_admins/${uid}`);
+                const snapshot = await get(adminRef);
+                
+                if (snapshot.exists() && snapshot.val().role === CURRENT_ADMIN_ROLE) {
+                    return true;
+                } else {
+                    window.showToast("❌ صلاحياتك كـ " + CURRENT_ADMIN_ROLE + " غير موثقة. برجاء مراجعة المالك.", "error");
+                    return false;
+                }
+            } catch (error) {
+                console.error("Firebase Auth Check Error:", error);
+                window.showToast("❌ خطأ في التحقق من الصلاحيات. برجاء مراجعة اتصالك.", "error");
+                return false;
+            }
+        }
+        
+        // 💡 Logic 2: دالة للتأكد من حالة الدخول والتوثيق قبل أي عملية
+        async function checkAuthAndProceed(action, ...args) {
+            if (!currentUserUid) {
+                window.showToast("❌ يجب تسجيل الدخول أولًا لإجراء أي عملية.", "error");
+                return;
+            }
+            if (await checkAdminStatus(currentUserUid)) { 
+                action(...args);
+            }
+        }
+
+        // 💡 Logic 3: تسجيل الدخول
+        window.handleLogin = async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('loginEmail').value;
+            const password = document.getElementById('loginPassword').value;
+            
+            try {
+                const userCredential = await signInWithEmailAndPassword(auth, email, password);
+                window.showToast("✅ تم تسجيل الدخول بنجاح. جاري التحقق من الصلاحيات...", "success");
+            } catch (error) {
+                window.showToast(`❌ فشل تسجيل الدخول: ${error.message}`, "error");
+            }
+        };
+
+        // 💡 Logic 4: تسجيل الخروج
+        window.logout = async () => {
+            await signOut(auth);
+            window.showToast("👋 تم تسجيل الخروج بنجاح.", "warn");
+        };
+
+        // 💡 Logic 5: توليد كود عشوائي فريد
+        function generateUniqueCode() {
+            let code;
+            do {
+                code = String(Math.floor(100000 + Math.random() * 900000));
+            } while (codesAddedBySara[code]);
+            return code;
+        }
+        
+        // 💡 Logic 6: إخراج الكود من الجهاز الحالي (مع التحقق)
+        window.ejectDevice = (uid, name) => checkAuthAndProceed(() => {
+            if (!confirm(`متأكد من إخراج كود الطالب ${name} (${uid}) من جهازه الحالي؟`)) return;
+            update(ref(db, 'approvedStudents/' + uid), {
+                deviceId: "",
+            }).then(() => {
+                window.showToast(`✅ تم إخراج كود ${uid} بنجاح.`, "success");
+            }).catch(e => window.showToast("❌ فشل الإخراج: " + e.message, "error"));
+        });
+
+        // 💡 Logic 7: حذف الكود (مع التحقق)
+        window.deleteCode = (uid, name) => checkAuthAndProceed(() => {
+            if (!confirm(`متأكد من حذف كود الطالب ${name} (${uid}) نهائياً؟`)) return;
+            remove(ref(db, 'approvedStudents/' + uid))
+            .then(() => window.showToast(`✅ تم حذف الكود ${uid} نهائياً.`, "success"))
+            .catch(e => window.showToast("❌ فشل الحذف: " + e.message, "error"));
+        });
+        
+        // 💡 Logic 8: تفعيل/تعطيل الكود (مع التحقق)
+        window.toggleBlock = (uid, name, isBlocked) => checkAuthAndProceed(() => {
+            update(ref(db, 'approvedStudents/' + uid), {
+                isBlocked: !isBlocked
+            }).then(() => {
+                window.showToast(`✅ تم ${!isBlocked ? 'تعطيل' : 'تفعيل'} كود ${name} بنجاح.`, "success");
+            }).catch(e => window.showToast("❌ فشل تغيير الحالة: " + e.message, "error"));
+        });
+
+        // 💡 Logic 9: إضافة كود جديد (SARA) (مع التحقق)
+        window.addNewCode = (e) => checkAuthAndProceed(() => {
+            e.preventDefault();
+            const form = e.target;
+            const name = form.studentName.value;
+            const price = parseFloat(form.price.value) || 0;
+            const durationType = form.durationType.value;
+            const newCode = document.getElementById('newCodeDisplay').textContent;
+            
+            let expiryTime = Date.now();
+            
+            if (durationType === 'trial') {
+                expiryTime += 1 * 60 * 60 * 1000;
+            } else if (durationType === '30days') {
+                expiryTime += 30 * 24 * 60 * 60 * 1000;
+            } else {
+                window.showToast("❌ يجب تحديد مدة التفعيل (ساعة أو 30 يوم).", "error");
+                return;
+            }
+
+            set(ref(db, 'approvedStudents/' + newCode), {
+                uid: newCode,
+                name: name,
+                pricePaid: price,
+                addedByAdmin: CURRENT_ADMIN_ROLE, // sara
+                approvedAt: Date.now(),
+                expiry: expiryTime,
+                deviceId: "",
+                isBlocked: false,
+                isTrial: durationType === 'trial'
+            }).then(() => {
+                window.showToast(`✅ تم إضافة الكود ${newCode} بنجاح.`, "success");
+                window.toggleAddCodeForm(false);
+                form.reset();
+            }).catch(error => {
+                window.showToast("❌ فشل الإضافة: " + error.message, "error");
+            });
+        }, e);
+        
+        // 💡 Logic 10: تحميل الأكواد (فقط أكواد Sara)
+        function loadSaraCodes() {
+            onValue(codesRef, (snapshot) => {
+                codesAddedBySara = {};
+                let totalCodes = 0;
+                let totalAmount = 0;
+                
+                snapshot.forEach((childSnapshot) => {
+                    const data = childSnapshot.val();
+                    // 🚨 فلترة الأكواد الخاصة بـ Sara فقط
+                    if ((data.addedByAdmin || '').toLowerCase() === CURRENT_ADMIN_ROLE) { 
+                        data.uid = childSnapshot.key;
+                        codesAddedBySara[childSnapshot.key] = data;
+                        totalCodes++;
+                        totalAmount += (data.pricePaid || 0);
+                    }
+                });
+                
+                renderCodesTable(Object.values(codesAddedBySara));
+                renderStats(totalCodes, totalAmount);
+                window.showToast("✅ تم تحديث بيانات لوحتك يا سارة.", "success");
+            }, (error) => {
+                window.showToast("❌ فشل الاتصال بقاعدة البيانات: " + error.message, "error");
+            });
+        }
+        
+        // 💡 Main Auth State Observer
+        onAuthStateChanged(auth, (user) => {
+            const loginContainer = document.getElementById('loginContainer');
+            const mainContent = document.getElementById('mainContent');
+            const logoutBtn = document.getElementById('logoutBtn');
+            const addCodeBtn = document.getElementById('addCodeButton');
+            const statsBtn = document.getElementById('statsButton');
+            
+            if (user) {
+                currentUserUid = user.uid;
+                
+                checkAdminStatus(user.uid).then(isVerified => {
+                    if (isVerified) {
+                        loginContainer.style.display = 'none';
+                        mainContent.style.display = 'block';
+                        addCodeBtn.style.display = 'block';
+                        statsBtn.style.display = 'block';
+                        logoutBtn.style.display = 'block';
+                        loadSaraCodes(); 
+                    } else {
+                        signOut(auth); 
+                    }
+                });
+            } else {
+                currentUserUid = null;
+                loginContainer.style.display = 'block';
+                mainContent.style.display = 'none';
+                addCodeBtn.style.display = 'none';
+                statsBtn.style.display = 'none';
+                logoutBtn.style.display = 'none';
+                document.getElementById('codesTableBody').innerHTML = '<tr><td colspan="7">برجاء تسجيل الدخول...</td></tr>';
+            }
+        });
+
+        // 💡 الدوال المساعدة للعرض
+        
+        function formatExpiry(timestamp) {
+            const now = Date.now();
+            if (timestamp < now) return '<span style="color:red; font-weight:bold;">منتهي</span>';
+            const diff = timestamp - now;
+            const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+            const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+            return `${days}ي ${hours}س`;
+        }
+
+        function renderCodesTable(codes) {
+            const tbody = document.getElementById('codesTableBody');
+            tbody.innerHTML = '';
+            if (codes.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7">لا توجد أكواد مضافة بواسطة Sara حاليًا.</td></tr>';
+                return;
+            }
+
+            codes.forEach(data => {
+                const isBlocked = data.isBlocked === true;
+                const statusText = isBlocked ? 'مُعطّل' : 'نشط';
+                const statusClass = isBlocked ? 'status-blocked' : 'status-active';
+                const blockBtnText = isBlocked ? 'تفعيل' : 'تعطيل';
+                
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="code-uid">${data.uid}</td>
+                    <td>${data.name}</td>
+                    <td>${data.pricePaid} ج.م</td>
+                    <td>${formatExpiry(data.expiry)}</td>
+                    <td class="${statusClass}">${statusText}</td>
+                    <td class="device-id">${data.deviceId || 'غير مُفعل'}</td>
+                    <td class="actions">
+                        <button onclick="ejectDevice('${data.uid}', '${data.name}')" class="eject-btn">إخراج الجهاز</button>
+                        <button onclick="toggleBlock('${data.uid}', '${data.name}', ${isBlocked})" class="${isBlocked ? 'unblock-btn' : 'block-btn'}">${blockBtnText}</button>
+                        <button onclick="deleteCode('${data.uid}', '${data.name}')" class="delete-btn">حذف</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+        
+        window.renderStats = (totalCodes, totalAmount) => {
+             const statsContainer = document.getElementById('statsContainer');
+             statsContainer.innerHTML = `
+                <div class="stat-item">
+                    <p>إجمالي الأكواد المضافة</p>
+                    <strong id="statTotalCodes">${totalCodes}</strong>
+                </div>
+                <div class="stat-item">
+                    <p>إجمالي المبلغ المحصّل</p>
+                    <strong id="statTotalAmount" style="color:var(--secondary);">${totalAmount.toLocaleString()} ج.م</strong>
+                </div>
+            `;
+        };
+        
+        window.toggleStats = (show) => {
+            const stats = document.getElementById('statsContainer');
+            const statsBtn = document.getElementById('statsButton');
+            
+            if (show) {
+                stats.style.display = 'flex';
+                statsBtn.textContent = 'إخفاء الإحصائيات 📉';
+                statsBtn.onclick = () => toggleStats(false);
+            } else {
+                stats.style.display = 'none';
+                statsBtn.textContent = 'عرض الإحصائيات 📈';
+                statsBtn.onclick = () => toggleStats(true);
+            }
+        };
+
+        window.toggleAddCodeForm = (show) => {
+            const form = document.getElementById('addCodeFormContainer');
+            if (show) {
+                 checkAuthAndProceed(() => {
+                    form.style.display = 'block';
+                    document.getElementById('newCodeDisplay').textContent = generateUniqueCode();
+                });
+            } else {
+                form.style.display = 'none';
+            }
+        };
+
+
+    </script>
+    <style>
+        :root {
+            --bg-dark: #111;
+            --primary: #00FF00; /* Cyber Green */
+            --secondary: #00E8C8; 
+            --text-light: #F0F0F0;
+            --error: #FF4444;
+            --warn: #FFA500;
+            --bg-mid: #222;
+            --hover-dark: #333;
+        }
+        * { box-sizing: border-box; font-family: 'Cairo', sans-serif; }
+        body { background: var(--bg-dark); color: var(--text-light); margin: 0; padding: 0; }
+        .container { max-width: 1200px; margin: 30px auto; padding: 20px; }
+        h1 { color: var(--primary); text-align: center; margin-bottom: 25px; border-bottom: 2px solid var(--bg-mid); padding-bottom: 10px; }
+        
+        /* Login Style */
+        #loginContainer { background: var(--bg-mid); padding: 30px; border-radius: 10px; max-width: 400px; margin: 100px auto; }
+        #loginContainer h2 { color: var(--secondary); text-align: center; margin-bottom: 20px; }
+        #loginContainer input { width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #444; border-radius: 5px; background: #333; color: var(--text-light); }
+        #loginContainer button { width: 100%; padding: 10px; background: var(--primary); color: var(--bg-dark); border: none; border-radius: 5px; font-weight: 700; cursor: pointer; transition: 0.3s; }
+        #loginContainer button:hover { background: #00cc00; }
+        
+        /* Main Content Style */
+        #mainContent { display: none; }
+        .header-controls { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        #logoutBtn { background: var(--error); color: var(--text-light); padding: 8px 15px; border: none; border-radius: 5px; cursor: pointer; font-weight: 700; }
+        #logoutBtn:hover { background: #cc3333; }
+        
+        /* Stats & Buttons */
+        .controls-row { display: flex; justify-content: space-between; gap: 15px; margin-bottom: 20px; }
+        #addCodeButton, #statsButton {
+            background: var(--primary); color: var(--bg-dark); padding: 10px 20px; 
+            border: none; border-radius: 8px; font-weight: 700; cursor: pointer; 
+            transition: 0.3s;
+        }
+        #addCodeButton:hover, #statsButton:hover { background: #00cc00; }
+        #statsButton { background: var(--secondary); }
+
+        #statsContainer { 
+            display: none; 
+            justify-content: space-around; 
+            background: #1a1a1a; 
+            padding: 20px; 
+            border-radius: 10px; 
+            margin-bottom: 25px; 
+            border-left: 5px solid var(--primary);
+        }
+        .stat-item { text-align: center; color: var(--text-light); }
+        .stat-item p { margin: 5px 0; font-size: 14px; color: var(--secondary); }
+        .stat-item strong { display: block; font-size: 32px; color: var(--primary); }
+
+        /* Table Style */
+        .table-responsive { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { padding: 10px; border: 1px solid #444; text-align: right; font-size: 14px; }
+        th { background: #333; color: var(--primary); }
+        tr:nth-child(even) { background: #1a1a1a; }
+        .code-uid, .device-id { font-family: monospace; font-size: 12px; direction: ltr; text-align: left; color: var(--secondary); }
+
+        /* Actions */
+        .status-active { color: var(--primary); font-weight: 700; }
+        .status-blocked { color: var(--warn); font-weight: 700; }
+        .actions button {
+            padding: 5px 10px; border: none; border-radius: 5px; cursor: pointer; margin: 2px; font-weight: 700; transition: 0.2s;
+        }
+        .eject-btn { background: #0099cc; color: var(--text-light); }
+        .block-btn { background: var(--warn); color: var(--bg-dark); }
+        .unblock-btn { background: var(--primary); color: var(--bg-dark); }
+        .delete-btn { background: var(--error); color: var(--text-light); }
+
+        /* Add Code Form */
+        #addCodeFormContainer {
+            display: none; background: #0a0a0a; padding: 25px; border-radius: 10px; margin-top: 20px;
+            border: 2px solid var(--secondary); max-width: 500px; margin-left: auto; margin-right: auto;
+        }
+        #newCodeDisplay { font-family: monospace; font-size: 18px; color: var(--primary); font-weight: 700; direction: ltr; text-align: left; background: #111; padding: 5px; border-radius: 5px; }
+        #addCodeFormContainer input, #addCodeFormContainer select {
+            width: 100%; padding: 10px; margin-top: 5px; border: 1px solid #444; border-radius: 5px; background: #333; color: var(--text-light);
+            margin-bottom: 10px;
+        }
+
+        /* Toast (نفس ستايل GIZA) */
+        #toast-container { position: fixed; bottom: 20px; left: 20px; z-index: 10000; }
+        .toast { padding: 12px 20px; border-radius: 10px; margin-top: 10px; font-weight: 700; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5); opacity: 0; animation: toastIn 0.5s forwards; transition: opacity 0.5s, transform 0.5s; min-width: 200px; text-align: right; }
+        .toast-success { background: var(--primary); color: var(--bg-dark); }
+        .toast-error { background: var(--error); color: var(--text-light); }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    
+    <div id="loginContainer">
+        <h2>تسجيل دخول المشرف (SARA)</h2>
+        <form id="loginForm" onsubmit="handleLogin(event)">
+            <input type="email" id="loginEmail" placeholder="البريد الإلكتروني" required>
+            <input type="password" id="loginPassword" placeholder="كلمة المرور" required>
+            <button type="submit">دخول 🛡️</button>
+        </form>
+    </div>
+
+    <div id="mainContent">
+        <div class="header-controls">
+            <h1>لوحة تحكم Sara 💻</h1>
+            <button id="logoutBtn" onclick="logout()">تسجيل الخروج</button>
+        </div>
+        
+        <div class="controls-row">
+            <button id="addCodeButton" onclick="toggleAddCodeForm(true)">+ إضافة كود جديد</button>
+            <button id="statsButton" onclick="toggleStats(true)">عرض الإحصائيات 📈</button>
+        </div>
+        
+        <div id="statsContainer">
+            </div>
+        
+        <div id="addCodeFormContainer">
+            <h3>إضافة كود جديد بواسطة Sara</h3>
+            <p>الكود العشوائي المُولَّد: <span id="newCodeDisplay">...</span></p>
+            <form id="addCodeForm" onsubmit="addNewCode(event)">
+                <label>اسم الطالب:</label>
+                <input type="text" name="studentName" required>
+                
+                <label>المبلغ المدفوع (جنيه):</label>
+                <input type="number" name="price" min="0" value="0">
+
+                <label>مدة التفعيل:</label>
+                <select name="durationType" required>
+                    <option value="">اختر المدة</option>
+                    <option value="trial">تجريبي (ساعة واحدة)</option>
+                    <option value="30days">اشتراك 30 يوم</option>
+                </select>
+                
+                <div class="form-actions" style="margin-top:10px;">
+                    <button type="submit" class="add-code-btn" style="background:var(--primary);">حفظ وتفعيل الكود</button>
+                    <button type="button" class="delete-btn" onclick="toggleAddCodeForm(false)">إلغاء</button>
+                </div>
+            </form>
+        </div>
+        
+        <h2>أكواد التفعيل المضافة بواسطتك</h2>
+        <div class="table-responsive">
+            <table>
+                <thead>
+                    <tr>
+                        <th>الكود (UID)</th>
+                        <th>اسم الطالب</th>
+                        <th>المبلغ</th>
+                        <th>الوقت المتبقي</th>
+                        <th>حالة الكود</th>
+                        <th>جهاز التفعيل</th>
+                        <th>الإجراءات</th>
+                    </tr>
+                </thead>
+                <tbody id="codesTableBody">
+                    <tr><td colspan="7">جاري تحميل الأكواد...</td></tr> 
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</div>
+
+<div id="toast-container"></div>
+</body>
+</html>
