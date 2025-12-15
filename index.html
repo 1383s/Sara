@@ -88,38 +88,16 @@
             
             try {
                 const userCredential = await signInWithEmailAndPassword(auth, email, password);
-                
-                // **** التعديل الأول: إلغاء الجلسة فورًا وحفظ الإيميل في Local Storage ****
-                // 1. حفظ الإيميل في Local Storage باسم 'sarausern'
-                localStorage.setItem('sarausern', email);
-                
-                // 2. تسجيل خروج فوري لإلغاء الجلسة المحفوظة في Firebase
-                await signOut(auth);
-                
-                // 3. عرض رسالة النجاح
-                window.showToast("✅ تم التحقق من البيانات بنجاح. برجاء تسجيل الدخول مرة أخرى لإتمام العملية.", "success");
-                
-                // 4. إعادة تحميل الصفحة (أو التوجيه لصفحة الـ Login) لتفعيل الدخول الجديد
-                // بما إن الـ Auth State Observer هيشتغل تاني، هنسيبها تكمل طبيعي
-                
+                window.showToast("✅ تم تسجيل الدخول بنجاح. جاري التحقق من الصلاحيات...", "success");
             } catch (error) {
                 window.showToast(`❌ فشل تسجيل الدخول: ${error.message}`, "error");
             }
         };
 
         // 💡 Logic 4: تسجيل الخروج
-        // هنعدل الدالة دي عشان تمسح الإيميل المحفوظ كمان
         window.logout = async () => {
-            // 1. مسح الإيميل من Local Storage (لتنفيذ الجزء اللي طلبتيه عن الزرار)
-            localStorage.removeItem('sarausern'); 
-            
-            // 2. تسجيل الخروج من Firebase
             await signOut(auth);
-            
-            window.showToast("👋 تم تسجيل الخروج بنجاح. البيانات المحفوظة حُذفت.", "warn");
-            
-            // 3. إعادة تحميل الصفحة لضمان مسح البيانات المعروضة وإظهار شاشة الدخول
-            window.location.reload(); 
+            window.showToast("👋 تم تسجيل الخروج بنجاح.", "warn");
         };
 
         // 💡 Logic 5: توليد كود عشوائي فريد
@@ -256,18 +234,6 @@
                 document.getElementById('codesTableBody').innerHTML = '<tr><td colspan="7">برجاء تسجيل الدخول...</td></tr>';
             }
         });
-
-        // **** التعديل الثاني: قراءة الإيميل من Local Storage عند تحميل الصفحة ****
-        document.addEventListener('DOMContentLoaded', () => {
-            const savedEmail = localStorage.getItem('sarausern');
-            const emailInput = document.getElementById('loginEmail');
-            if (savedEmail && emailInput) {
-                emailInput.value = savedEmail;
-                // عشان لما يتحفظ الإيميل، اليوزر يبدأ كتابة الباسورد على طول
-                document.getElementById('loginPassword').focus(); 
-            }
-        });
-
 
         // 💡 الدوال المساعدة للعرض
         
@@ -454,7 +420,6 @@
             <input type="email" id="loginEmail" placeholder="البريد الإلكتروني" required>
             <input type="password" id="loginPassword" placeholder="كلمة المرور" required>
             <button type="submit">دخول 🛡️</button>
-            <button type="button" onclick="clearLocalSessionData()" style="background: #555; margin-top: 10px;">مسح بيانات تسجيل الدخول المحفوظة</button>
         </form>
     </div>
 
@@ -520,14 +485,5 @@
 </div>
 
 <div id="toast-container"></div>
-<script>
-// **** دالة جديدة لحذف البيانات من Local Storage (لتنفيذ طلبك في صفحة الـ Login) ****
-window.clearLocalSessionData = () => {
-    localStorage.removeItem('sarausern');
-    document.getElementById('loginEmail').value = ''; // مسح الحقل فورًا
-    window.showToast("✅ تم مسح الإيميل المحفوظ من المتصفح.", "success");
-    // مش لازم reload عشان التغيير بيظهر في الحقل على طول
-};
-</script>
 </body>
 </html>
