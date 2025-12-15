@@ -58,9 +58,8 @@
             if (uid === SARA_ALLOWED_UID) {
                 return true;
             } else {
+                // 🛑 هنا كنا بنحط signOut(auth) - تم إزالته بناءً على طلبك
                 window.showToast("❌ غير مُصرح لك بالدخول لهذه اللوحة. الـ UID غير مطابق لـ UID المشرف.", "error");
-                // تسجيل الخروج لضمان الأمان
-                signOut(auth); 
                 return false;
             }
         }
@@ -217,7 +216,14 @@
                         logoutBtn.style.display = 'block';
                         loadSaraCodes(); 
                     } else {
-                        signOut(auth); 
+                        // 🛑 الإبقاء على المستخدم مسجل دخول رغم فشل التحقق (بناءً على طلبك)
+                        // عشان يسمح له بالبقاء في الصفحة مع ظهور رسالة الخطأ
+                        loginContainer.style.display = 'none';
+                        mainContent.style.display = 'block';
+                        addCodeBtn.style.display = 'none'; // تعطيل الإضافة لضمان الأمان
+                        statsBtn.style.display = 'none';
+                        logoutBtn.style.display = 'block';
+                        document.getElementById('codesTableBody').innerHTML = '<tr><td colspan="7">❌ غير مصرح لك بعرض البيانات.</td></tr>';
                     }
                 });
             } else {
