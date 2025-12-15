@@ -22,8 +22,13 @@
         };
         
         // 🔑 تحديد دور اللوحة دي
-        const CURRENT_ADMIN_ROLE = 'sara'; // 🚨 التحديد هنا مهم
+        const CURRENT_ADMIN_ROLE = 'sara'; 
         
+        // 🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨
+        // 🚨 الـ UID الثابت لـ SARA اللي لازم يتطابق مع الـ Auth UID
+        // 🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨
+        const SARA_ALLOWED_UID = "TZtZBAR7uCYWO1ebnKmpRAteQ4T2"; 
+
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
         const auth = getAuth(app);
@@ -32,11 +37,8 @@
         let codesAddedBySara = {};
         let currentUserUid = null;
         
-        // 🚨🚨 مكان وضع الـ UID اليدوي
-        const SARA_FIXED_UID = "TZtZBAR7uCYWO1ebnKmpRAteQ4T2"; 
-
-
-        window.showToast = (message, type = "success") => { /* ... (نفس دالة GIZA) ... */ 
+        // 🎨 Global UI Functions
+        window.showToast = (message, type = "success") => { 
             const container = document.getElementById('toast-container');
             const toast = document.createElement('div');
             toast.className = `toast toast-${type}`;
@@ -50,21 +52,15 @@
             }, 5000);
         };
         
-        // 💡 Logic 1: التحقق من UID الأدمن الحالي وصلاحياته
+        // 💡 Logic 1: التحقق من UID الأدمن الحالي وصلاحياته (اللوجيك الجديد)
         async function checkAdminStatus(uid) {
-            try {
-                const adminRef = ref(db, `allowed_admins/${uid}`);
-                const snapshot = await get(adminRef);
-                
-                if (snapshot.exists() && snapshot.val().role === CURRENT_ADMIN_ROLE) {
-                    return true;
-                } else {
-                    window.showToast("❌ صلاحياتك كـ " + CURRENT_ADMIN_ROLE + " غير موثقة. برجاء مراجعة المالك.", "error");
-                    return false;
-                }
-            } catch (error) {
-                console.error("Firebase Auth Check Error:", error);
-                window.showToast("❌ خطأ في التحقق من الصلاحيات. برجاء مراجعة اتصالك.", "error");
+            // 🚨 التحقق المباشر: هل الـ UID اللي سجل دخول هو UID SARA المُصرح به؟
+            if (uid === SARA_ALLOWED_UID) {
+                return true;
+            } else {
+                window.showToast("❌ غير مُصرح لك بالدخول لهذه اللوحة. الـ UID غير مطابق لـ UID المشرف.", "error");
+                // تسجيل الخروج لضمان الأمان
+                signOut(auth); 
                 return false;
             }
         }
